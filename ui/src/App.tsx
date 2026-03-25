@@ -20,13 +20,18 @@ export default function App() {
   }, []);
 
   // Use extension service client to communicate with backend
-  const callBackend = async (path: string, body?: any) => {
+  const callBackend = async (path: string, method: 'get' | 'post' = 'get', body?: any) => {
     try {
-      const requestBody = body ? JSON.stringify(body) : '';
-      const response = await client.extension.vm?.service?.post(
-        path,
-        { body: requestBody }
-      );
+      let response;
+      if (method === 'post') {
+        const requestBody = body ? JSON.stringify(body) : '';
+        response = await client.extension.vm?.service?.post(
+          path,
+          { body: requestBody }
+        );
+      } else {
+        response = await client.extension.vm?.service?.get(path);
+      }
 
       if (!response) throw new Error('No response from service');
       
@@ -46,7 +51,7 @@ export default function App() {
     setIsLoading(true);
     setStatus('Connecting...');
     try {
-      await callBackend('/api/connect', { kubeconfig_yaml: kubeconfig });
+      await callBackend('/api/connect', 'post', { kubeconfig_yaml: kubeconfig });
       setIsConnected(true);
       setStatus('Connected! Fetching namespaces...');
       const ns = await callBackend('/api/namespaces');
@@ -78,7 +83,7 @@ export default function App() {
     setIsLoading(true);
     setStatus('Provisioning...');
     try {
-      const result = await callBackend('/api/provision', {
+      const result = await callBackend('/api/provision', 'post', {
         namespace: selectedNamespace,
         db_name: dbName,
         engine,

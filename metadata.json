@@ -3,7 +3,7 @@
   "ui": {
     "dashboard-tab": {
       "title": "VMware DSM",
-      "root": "/ui/dist",
+"root": "/ui",
       "src": "index.html"
     }
   },

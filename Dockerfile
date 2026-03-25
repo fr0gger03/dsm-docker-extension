@@ -7,7 +7,7 @@ COPY ui/ .
 RUN npm run build
 
 # Stage 2: Assemble the final Docker Extension image
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="VMwareDSMExtension" \
       org.opencontainers.image.description="Provision DSM databases natively from Docker Desktop" \
@@ -21,7 +21,8 @@ COPY icon.svg /
 COPY docker-compose.yaml /
 
 # Copy UI dist to a location the extension can extract
-COPY --from=ui-builder /app/ui/dist /ui/dist
+# Must be /ui (not /ui/dist) — Docker Desktop prepends ui/ when resolving the root path
+COPY --from=ui-builder /app/ui/dist /ui
 
 # Set up the Python Backend
 WORKDIR /backend

@@ -114,6 +114,9 @@ def provision_db(req: ProvisionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Mount static files for UI (must be last to not intercept /api routes)
+# In the Docker image, built files are at /ui; in local dev, they're at ../ui/dist
 ui_path = os.path.join(os.path.dirname(__file__), "..", "ui", "dist")
-if os.path.exists(ui_path):
+if not os.path.exists(os.path.join(ui_path, "index.html")):
+    ui_path = os.path.join(os.path.dirname(__file__), "..", "ui")
+if os.path.exists(os.path.join(ui_path, "index.html")):
     app.mount("/", StaticFiles(directory=ui_path, html=True), name="static")
