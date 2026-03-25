@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  vmware-dsm:
+    image: vmware-dsm-extension:latest
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - DOCKER_HOST=unix:///run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/run/docker.sock

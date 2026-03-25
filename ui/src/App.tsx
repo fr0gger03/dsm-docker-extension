@@ -1,172 +1,186 @@
 import { useState, useEffect } from 'react';
 import { createDockerDesktopClient } from '@docker/extension-api-client';
 
-// Initialize the Docker Desktop Extension Client
-const ddClient = createDockerDesktopClient();
+const client = createDockerDesktopClient();
 
 export default function App() {
   const [kubeconfig, setKubeconfig] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  
-  // Form State
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const [selectedNamespace, setSelectedNamespace] = useState('');
   const [policies, setPolicies] = useState<string[]>([]);
   const [selectedPolicy, setSelectedPolicy] = useState('');
   const [engine, setEngine] = useState('postgres');
   const [dbName, setDbName] = useState('');
-  
-  // UI State
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState('Initializing extension client...');
+  const [isLoading, setIsLoading] = useState(false);
 
-  // 1. Connect and Fetch Namespaces
-  const handleConnect = async () => {
-    setStatus('Connecting and validating RBAC...');
+  useEffect(() => {
+    setStatus('Extension client ready');
+  }, []);
+
+  // Use extension service client to communicate with backend
+  const callBackend = async (path: string, body?: any) => {
     try {
-      await ddClient.extension.vm?.service?.request({
-        url: '/api/connect',
-        method: 'POST',
-        headers: {},
-        data: { kubeconfig_yaml: kubeconfig }
-      });
+      const requestBody = body ? JSON.stringify(body) : '';
+      const response = await client.extension.vm?.service?.post(
+        path,
+        { body: requestBody }
+      );
+
+      if (!response) throw new Error('No response from service');
+      
+      const data = typeof response === 'string' ? JSON.parse(response) : response;
+      return data;
+    } catch (error: any) {
+      throw new Error(error.message || 'Service communication failed');
+    }
+  };
+
+  const handleConnect = async () => {
+    if (!kubeconfig.trim()) {
+      setStatus('Please paste a kubeconfig first');
+      return;
+    }
+
+    setIsLoading(true);
+    setStatus('Connecting...');
+    try {
+      await callBackend('/api/connect', { kubeconfig_yaml: kubeconfig });
       setIsConnected(true);
       setStatus('Connected! Fetching namespaces...');
-      fetchNamespaces();
+      const ns = await callBackend('/api/namespaces');
+      setNamespaces(ns.namespaces || []);
+      setStatus('Ready');
     } catch (error: any) {
-      setStatus(`Connection Failed: ${error.message}`);
+      setStatus(`Error: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const fetchNamespaces = async () => {
-    try {
-      const res = await ddClient.extension.vm?.service?.request({
-        url: '/api/namespaces',
-        method: 'GET',
-        headers: {},
-        data: {}
-      });
-      // @ts-ignore - bypassing strict type checking for the custom response
-      setNamespaces(res?.namespaces || []);
-      setStatus('Ready.');
-    } catch (error: any) {
-      setStatus(`Failed to load namespaces: ${error.message}`);
-    }
-  };
-
-  // 2. Fetch Policies dynamically when a namespace is selected
   useEffect(() => {
-    if (!selectedNamespace) return;
+    if (!selectedNamespace || !isConnected) return;
     
     const fetchPolicies = async () => {
-      setStatus(`Fetching policies for ${selectedNamespace}...`);
       try {
-        const res = await ddClient.extension.vm?.service?.request({
-          url: `/api/policies/${selectedNamespace}`,
-          method: 'GET',
-          headers: {},
-          data: {}
-        });
-        // @ts-ignore
-        setPolicies(res?.policies || []);
-        setStatus('Ready.');
+        const data = await callBackend(`/api/policies/${selectedNamespace}`);
+        setPolicies(data.policies || []);
       } catch (error: any) {
-        setStatus(`Failed to load policies: ${error.message}`);
+        setStatus(`Error fetching policies: ${error.message}`);
       }
     };
     
     fetchPolicies();
-  }, [selectedNamespace]);
+  }, [selectedNamespace, isConnected]);
 
-  // 3. Provision the Database
   const handleProvision = async () => {
-    setStatus('Provisioning Database...');
+    setIsLoading(true);
+    setStatus('Provisioning...');
     try {
-      const res = await ddClient.extension.vm?.service?.request({
-        url: '/api/provision',
-        method: 'POST',
-        headers: {},
-        data: {
-          namespace: selectedNamespace,
-          db_name: dbName,
-          engine: engine,
-          policy: selectedPolicy
-        }
+      const result = await callBackend('/api/provision', {
+        namespace: selectedNamespace,
+        db_name: dbName,
+        engine,
+        policy: selectedPolicy
       });
-      // @ts-ignore
-      setStatus(`Success: ${res?.message}. Check your cluster!`);
+      setStatus(`Success: ${result.message}`);
+      setDbName('');
     } catch (error: any) {
-      setStatus(`Provisioning Failed: ${error.message}`);
+      setStatus(`Error: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
+    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '800px' }}>
       <h1>VMware Data Services Manager</h1>
-      
+      <p style={{ fontSize: '12px', color: '#666' }}>Status: {status}</p>
+
       {!isConnected ? (
-        <div>
-          <h3>Step 1: Authenticate</h3>
-          <p>Paste your DSM Kubeconfig YAML below. Entitlements are automatically enforced.</p>
-          <textarea 
-            rows={10} 
-            style={{ width: '100%', marginBottom: '10px', fontFamily: 'monospace' }}
-            placeholder="apiVersion: v1..."
+        <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '4px' }}>
+          <h3>Authenticate</h3>
+          <textarea
+            rows={10}
+            style={{ width: '100%', marginBottom: '10px', fontFamily: 'monospace', padding: '8px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+            placeholder="Paste kubeconfig YAML..."
             value={kubeconfig}
             onChange={(e) => setKubeconfig(e.target.value)}
+            disabled={isLoading}
           />
-          <button onClick={handleConnect}>Connect via Kubeconfig</button>
+          <button
+            onClick={handleConnect}
+            disabled={isLoading || !kubeconfig.trim()}
+            style={{ padding: '8px 16px', backgroundColor: '#0066cc', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            {isLoading ? 'Connecting...' : 'Connect'}
+          </button>
         </div>
       ) : (
-        <div>
-          <h3>Step 2: Provision Database</h3>
-          
-          <div style={{ marginBottom: '10px' }}>
-            <label>Namespace: </label>
-            <select onChange={(e) => setSelectedNamespace(e.target.value)} value={selectedNamespace}>
-              <option value="">-- Select a Namespace --</option>
+        <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '4px' }}>
+          <h3>Provision Database</h3>
+
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Namespace</label>
+            <select
+              value={selectedNamespace}
+              onChange={(e) => setSelectedNamespace(e.target.value)}
+              disabled={isLoading}
+              style={{ width: '100%', padding: '6px' }}
+            >
+              <option value="">Select...</option>
               {namespaces.map(ns => <option key={ns} value={ns}>{ns}</option>)}
             </select>
           </div>
 
-          <div style={{ marginBottom: '10px' }}>
-            <label>Engine: </label>
-            <select onChange={(e) => setEngine(e.target.value)} value={engine}>
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Engine</label>
+            <select
+              value={engine}
+              onChange={(e) => setEngine(e.target.value)}
+              disabled={isLoading}
+              style={{ width: '100%', padding: '6px' }}
+            >
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL</option>
             </select>
           </div>
 
-          <div style={{ marginBottom: '10px' }}>
-            <label>Data Service Policy: </label>
-            <select onChange={(e) => setSelectedPolicy(e.target.value)} value={selectedPolicy} disabled={!selectedNamespace}>
-              <option value="">-- Select a Policy --</option>
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Policy</label>
+            <select
+              value={selectedPolicy}
+              onChange={(e) => setSelectedPolicy(e.target.value)}
+              disabled={!selectedNamespace || isLoading}
+              style={{ width: '100%', padding: '6px' }}
+            >
+              <option value="">Select...</option>
               {policies.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
 
-          <div style={{ marginBottom: '10px' }}>
-            <label>Database Name: </label>
-            <input 
-              type="text" 
-              placeholder="e.g., my-dev-db" 
-              value={dbName} 
-              onChange={(e) => setDbName(e.target.value)} 
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Database Name</label>
+            <input
+              type="text"
+              placeholder="my-db"
+              value={dbName}
+              onChange={(e) => setDbName(e.target.value)}
+              disabled={isLoading}
+              style={{ width: '100%', padding: '6px', boxSizing: 'border-box' }}
             />
           </div>
 
-          <button 
-            onClick={handleProvision} 
-            disabled={!selectedNamespace || !selectedPolicy || !dbName}
+          <button
+            onClick={handleProvision}
+            disabled={!selectedNamespace || !selectedPolicy || !dbName || isLoading}
+            style={{ padding: '8px 16px', backgroundColor: '#0066cc', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
-            Provision to DSM
+            {isLoading ? 'Provisioning...' : 'Provision'}
           </button>
         </div>
       )}
-
-      {/* Status Footer */}
-      <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
-        <strong>Status:</strong> {status || 'Waiting for input...'}
-      </div>
     </div>
   );
 }

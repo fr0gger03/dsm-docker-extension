@@ -1,28 +1,30 @@
 # Stage 1: Build the React frontend
-FROM node:20-alpine AS ui-builder
+FROM node:22-alpine AS ui-builder
 WORKDIR /app/ui
-
-# Copy package files and install dependencies
 COPY ui/package*.json ./
-RUN npm install --prefer-offline --no-audit
-
-# Copy the rest of the UI source and build it
+RUN npm install
 COPY ui/ .
 RUN npm run build
 
-# Stage 2: Assemble the Docker Extension image
-FROM alpine:3.18
+# Stage 2: Assemble the final Docker Extension image
+FROM python:3.11-slim
 
-# Standard extension labels
-LABEL org.opencontainers.image.title="VMware DSM Extension" \
+LABEL org.opencontainers.image.title="VMwareDSMExtension" \
       org.opencontainers.image.description="Provision DSM databases natively from Docker Desktop" \
       org.opencontainers.image.vendor="You/YourOrg" \
       com.docker.desktop.extension.api.version="0.3.4" \
       com.docker.extension.categories="database,development"
 
-# Copy the required extension files
-COPY metadata.json .
-COPY docker-compose.yaml .
+# Copy metadata and icon to root
+COPY metadata.json /
+COPY icon.svg /
+COPY docker-compose.yaml /
 
-# Copy the compiled Vite frontend from the build stage
-COPY --from=ui-builder /app/ui/dist ui
+# Copy UI dist to a location the extension can extract
+COPY --from=ui-builder /app/ui/dist /ui/dist
+
+# Set up the Python Backend
+WORKDIR /backend
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/main.py .

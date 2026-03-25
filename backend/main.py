@@ -1,9 +1,21 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from kubernetes import client, config
 import yaml
+import os
 
 app = FastAPI()
+
+# Enable CORS for Docker Desktop extension
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # In-memory storage for the active session's kubeconfig
 session_state = {"kubeconfig": None}
@@ -100,3 +112,8 @@ def provision_db(req: ProvisionRequest):
         return {"status": "Provisioning Started", "message": f"Created {req.db_name} in {req.namespace}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Mount static files for UI (must be last to not intercept /api routes)
+ui_path = os.path.join(os.path.dirname(__file__), "..", "ui", "dist")
+if os.path.exists(ui_path):
+    app.mount("/", StaticFiles(directory=ui_path, html=True), name="static")

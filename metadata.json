@@ -3,11 +3,12 @@
   "ui": {
     "dashboard-tab": {
       "title": "VMware DSM",
-      "root": "ui",
+      "root": "/ui/dist",
       "src": "index.html"
     }
   },
   "vm": {
+    "image": "${DESKTOP_PLUGIN_IMAGE}",
     "composefile": "docker-compose.yaml"
   }
 }
