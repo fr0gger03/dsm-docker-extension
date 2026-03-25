@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environments
+venv/
+env/
+.venv
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# IDEs and Editors
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
+.atom
+.project
+.settings
+.classpath
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.nyc_output/
+coverage/
+
+# Build artifacts (Node/Vite)
+ui/dist/
+ui/build/
+.next/
+.nuxt/
+out/
+.cache/
+.turbo/
+.parcel-cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pip-log.txt
+pip-delete-this-directory.txt
+
+# OS files
+.AppleDouble
+.LSOverride
+
+# Certificates & Keys
+*.pem
+*.key
+*.cert
+
+# IDE temp files
+.vscode/launch.json
+.vscode/settings.json
+
+# Misc
+.turbo/
+node_modules/.cache/

@@ -1,0 +1,9 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      # This is the magic volume that lets the React UI talk to FastAPI
+      - /run/guest-services:/run/guest-services
+    restart: always

@@ -1,0 +1,13 @@
+{
+  "icon": "icon.svg",
+  "ui": {
+    "dashboard-tab": {
+      "title": "VMware DSM",
+      "root": "ui",
+      "src": "index.html"
+    }
+  },
+  "vm": {
+    "composefile": "docker-compose.yaml"
+  }
+}
