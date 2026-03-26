@@ -9,10 +9,12 @@ This extension provides a seamless interface for connecting to Kubernetes cluste
 ## Features
 
 - **Kubeconfig Integration**: Securely connect to Kubernetes clusters via kubeconfig authentication
+- **Persistent Sessions**: Kubeconfig is stored in the backend container's memory — navigate away and come back without re-authenticating
 - **Namespace Discovery**: Automatically list accessible namespaces based on your RBAC permissions
-- **Policy Management**: Retrieve and display available DSM Data Service Policies
-- **Database Provisioning**: Create database clusters with configurable engines and policies
-- **Real-time Status**: Session-aware connection state with error feedback
+- **Policy Management**: Retrieve and display available DSM Data Service Policies (with automatic fallback to policy bindings)
+- **Database Provisioning**: Create PostgreSQL or MySQL database clusters with configurable policies
+- **Database Management**: View provisioned databases with status and delete them from the UI
+- **Versioned Releases**: Version displayed in UI header and embedded in Docker image labels
 
 ## Architecture
 
@@ -29,33 +31,48 @@ Located in `ui/`, the dashboard tab provides:
 
 ### Backend (FastAPI + Python)
 Located in `backend/`, the API server provides:
-- `/api/connect` - Authenticate with kubeconfig and establish session
-- `/api/namespaces` - List namespaces accessible to the authenticated user
-- `/api/policies/{namespace}` - Retrieve DSM Data Service Policies in a namespace
-- `/api/provision` - Create a new database cluster resource
+- `GET /api/status` - Check for existing session (enables persistent connections)
+- `POST /api/connect` - Authenticate with kubeconfig and establish session
+- `POST /api/disconnect` - Clear the stored kubeconfig session
+- `GET /api/namespaces` - List namespaces accessible to the authenticated user
+- `GET /api/policies/{namespace}` - Retrieve DSM Data Service Policies in a namespace
+- `POST /api/provision` - Create a new database cluster resource (PostgreSQL or MySQL)
+- `GET /api/databases/{namespace}` - List provisioned databases
+- `DELETE /api/databases/{namespace}/{name}?engine=...` - Delete a provisioned database
+- `GET /api/version` - Return the current application version
 
-**Tech Stack**: FastAPI, Python 3.11, Kubernetes Python client
+**Tech Stack**: FastAPI, Python 3.13, Kubernetes Python client
 
 ## Prerequisites
 
 - Docker Desktop with Extensions support enabled
 - Access to a Kubernetes cluster with VMware DSM installed
 - Valid kubeconfig for the target cluster
-- Required RBAC permissions to list namespaces, policies, and create DBCluster resources
+- Required RBAC permissions to list namespaces, policies, and create/delete database resources
 
 ## Installation
 
-1. Build the extension:
+Build and install in one step (tags with version number):
 ```bash
-docker build -t vmware-dsm-extension .
+./install-extension.sh
 ```
 
-2. Install into Docker Desktop:
+Or with a specific version:
 ```bash
-docker extension install vmware-dsm-extension
+./install-extension.sh 0.2.0
 ```
 
-Or install directly from the Docker Desktop Extensions marketplace if published.
+Manual steps:
+```bash
+# Build with version
+docker build --build-arg APP_VERSION=0.1.0 -t vmware-dsm-extension:0.1.0 .
+
+# Install (first time)
+docker extension install vmware-dsm-extension:0.1.0
+
+# Update (subsequent builds)
+docker extension update vmware-dsm-extension:0.1.0
+```
 
 ## Development
 
@@ -88,31 +105,33 @@ The UI will be available at `http://localhost:5173` (default Vite port).
 ### Building for Production
 
 ```bash
-docker-compose up --build
+# Build with version (used for image tag, label, and UI display)
+docker build --build-arg APP_VERSION=0.1.0 -t vmware-dsm-extension:0.1.0 .
 ```
 
-This will:
-1. Build the React frontend using Node 20 and Vite
-2. Assemble the extension image with compiled frontend assets
-3. Start the FastAPI backend service
+### Standalone mode (outside Docker Desktop, exposes port 3000)
+```bash
+docker-compose -f docker-compose.standalone.yml up
+```
 
 ### Project Structure
 
 ```
 .
-├── Dockerfile                 # Multi-stage build (UI + extension assembly)
-├── docker-compose.yaml        # Backend service and volume mounts
-├── metadata.json              # Docker Extension metadata
-├── icon.svg                   # Extension icon
-├── ui/                        # React frontend application
-│   ├── src/                   # TypeScript/React components
-│   ├── package.json           # Frontend dependencies
-│   ├── vite.config.ts         # Vite configuration
-│   └── tsconfig.json          # TypeScript configuration
-└── backend/                   # FastAPI backend
-    ├── main.py                # API endpoints and logic
-    ├── Dockerfile             # Backend service image
-    └── requirements.txt       # Python dependencies
+├── Dockerfile                   # Multi-stage build (UI + Python backend)
+├── docker-compose.yaml          # Backend service for DD extension (Unix socket)
+├── docker-compose.standalone.yml # Standalone mode (TCP port 3000)
+├── metadata.json                # Docker Extension metadata + socket config
+├── install-extension.sh         # Build + install/update shortcut
+├── icon.svg                     # Extension icon
+├── ui/                          # React frontend application
+│   ├── src/App.tsx              # All UI logic (single component)
+│   ├── package.json             # Frontend dependencies + version
+│   ├── vite.config.ts           # Vite configuration (base: './')
+│   └── tsconfig.json            # TypeScript configuration
+└── backend/                     # FastAPI backend
+    ├── main.py                  # API endpoints and logic
+    └── requirements.txt         # Python dependencies
 ```
 
 ## Usage
@@ -126,14 +145,19 @@ This will:
 ### Provisioning a Database
 
 1. Once connected, select a namespace from the dropdown
-2. View available policies for that namespace
-3. Fill in the database details:
-   - **Name**: Cluster name (e.g., `my-postgres-db`)
-   - **Engine**: Database engine type (e.g., `postgres`, `mysql`)
+2. View existing databases in the **Databases** table
+3. Fill in the provisioning form:
+   - **Engine**: PostgreSQL or MySQL
    - **Policy**: Select a DSM Data Service Policy
-4. Click "Provision" to create the database cluster
+   - **Name**: Database name (e.g., `my-postgres-db`)
+4. Click "Provision" to create the database
 
-The backend will create a `DBCluster` resource in the specified namespace with your chosen configuration.
+### Managing Databases
+
+- The **Databases** table shows all provisioned databases in the selected namespace with their engine, status, and creation time
+- Click **Delete** to remove a database
+- Click **Refresh** to update the list
+- Click **Disconnect** to clear the session and connect with a different kubeconfig
 
 ## Communication
 
@@ -141,21 +165,18 @@ The extension uses Unix domain sockets for secure communication between the fron
 - Socket path: `/run/guest-services/backend.sock`
 - This enables secure IPC within Docker Desktop's guest environment
 
-## Building Custom Images
+## Versioning
 
-### Frontend Build
-The Dockerfile uses a multi-stage approach:
-```dockerfile
-# Stage 1: Build React with Node
-FROM node:20-alpine AS ui-builder
-...
-# Stage 2: Package extension with compiled assets
-FROM alpine:3.18
-...
+The version is controlled by the `APP_VERSION` build arg in the Dockerfile (default: `0.1.0`). It flows to:
+- Docker image label (`org.opencontainers.image.version`)
+- Docker image tag (e.g., `vmware-dsm-extension:0.1.0`)
+- Backend environment variable → `GET /api/version`
+- UI header display ("v0.1.0")
+
+To release a new version:
+```bash
+./install-extension.sh 0.2.0
 ```
-
-### Backend Deployment
-The backend runs as a FastAPI application via Uvicorn, listening on a Unix domain socket that Docker Desktop exposes to the extension frontend.
 
 ## Troubleshooting
 
