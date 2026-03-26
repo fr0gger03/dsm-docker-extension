@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from kubernetes import client, config
+from kubernetes.client.exceptions import ApiException
 import yaml
 import os
+import json
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +36,18 @@ class ProvisionRequest(BaseModel):
     engine: str
     policy: str
 
+def extract_k8s_error(e: Exception) -> str:
+    """Extract a clean error message from a K8s ApiException."""
+    if isinstance(e, ApiException):
+        try:
+            body = json.loads(e.body)
+            if "message" in body:
+                return body["message"]
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+        return f"{e.reason} ({e.status})" if e.reason else str(e)
+    return str(e)
+
 # --- Helper to get an authenticated K8s client ---
 def get_k8s_client():
     if not session_state["kubeconfig"]:
@@ -47,6 +61,27 @@ def get_k8s_client():
     return client.CoreV1Api(), client.CustomObjectsApi()
 
 # --- Endpoints ---
+
+@app.get("/api/status")
+def get_status():
+    """Check if a kubeconfig session exists and return connection state."""
+    connected = session_state["kubeconfig"] is not None
+    result = {"connected": connected, "namespaces": []}
+    if connected:
+        try:
+            core_api, _ = get_k8s_client()
+            ns_list = core_api.list_namespace()
+            result["namespaces"] = [ns.metadata.name for ns in ns_list.items]
+        except Exception:
+            # Session exists but K8s is unreachable — still report connected
+            pass
+    return result
+
+@app.post("/api/disconnect")
+def disconnect():
+    """Clear the stored kubeconfig session."""
+    session_state["kubeconfig"] = None
+    return {"status": "Disconnected"}
 
 @app.post("/api/connect")
 def connect(req: ConnectRequest):
@@ -71,7 +106,7 @@ def get_namespaces():
         namespaces = core_api.list_namespace()
         return {"namespaces": [ns.metadata.name for ns in namespaces.items]}
     except Exception as e:
-        raise HTTPException(status_code=403, detail=f"Failed to list namespaces. Check RBAC: {str(e)}")
+        raise HTTPException(status_code=403, detail=f"Failed to list namespaces: {extract_k8s_error(e)}")
 
 @app.get("/api/policies/{namespace}")
 def get_policies(namespace: str):
@@ -101,7 +136,7 @@ def get_policies(namespace: str):
             return {"policies": names}
         return {"policies": [p["metadata"]["name"] for p in policies.get("items", [])]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=extract_k8s_error(e))
 
 # Map UI engine names to DSM CRD plural names and Kind
 ENGINE_CRD_MAP = {
@@ -129,6 +164,9 @@ def provision_db(req: ProvisionRequest):
         }
     }
     
+    logger.info(f"Provisioning {req.engine} '{req.db_name}' in {req.namespace} with policy '{req.policy}'")
+    logger.info(f"Manifest: {manifest}")
+    
     try:
         custom_api.create_namespaced_custom_object(
             group="databases.dataservices.vmware.com",
@@ -139,9 +177,60 @@ def provision_db(req: ProvisionRequest):
         )
         return {"status": "Provisioning Started", "message": f"Created {req.db_name} in {req.namespace}"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Provision failed for {req.db_name}")
+        raise HTTPException(status_code=500, detail=extract_k8s_error(e))
 
-# Mount static files for UI (must be last to not intercept /api routes)
+# Database CRD types to query when listing databases
+DATABASE_CRDS = [
+    {"plural": "postgresclusters", "engine": "postgres"},
+    {"plural": "mysqlclusters", "engine": "mysql"},
+]
+
+@app.get("/api/databases/{namespace}")
+def list_databases(namespace: str):
+    """List all provisioned databases in a namespace."""
+    _, custom_api = get_k8s_client()
+    databases = []
+    for crd in DATABASE_CRDS:
+        try:
+            result = custom_api.list_namespaced_custom_object(
+                group="databases.dataservices.vmware.com",
+                version="v1alpha1",
+                namespace=namespace,
+                plural=crd["plural"]
+            )
+            for item in result.get("items", []):
+                status = item.get("status", {})
+                databases.append({
+                    "name": item["metadata"]["name"],
+                    "engine": crd["engine"],
+                    "status": status.get("phase", status.get("state", "Unknown")),
+                    "created": item["metadata"].get("creationTimestamp", ""),
+                })
+        except Exception as e:
+            logger.warning(f"Failed to list {crd['plural']} in {namespace}: {e}")
+    return {"databases": databases}
+
+@app.delete("/api/databases/{namespace}/{name}")
+def delete_database(namespace: str, name: str, engine: str = Query(...)):
+    """Delete a provisioned database by name and engine type."""
+    _, custom_api = get_k8s_client()
+    crd_info = ENGINE_CRD_MAP.get(engine)
+    if not crd_info:
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
+    try:
+        custom_api.delete_namespaced_custom_object(
+            group="databases.dataservices.vmware.com",
+            version="v1alpha1",
+            namespace=namespace,
+            plural=crd_info["plural"],
+            name=name,
+        )
+        return {"status": "Deleted", "message": f"Deleted {name} in {namespace}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=extract_k8s_error(e))
+
+# Mount static files
 # In the Docker image, built files are at /ui; in local dev, they're at ../ui/dist
 ui_path = os.path.join(os.path.dirname(__file__), "..", "ui", "dist")
 if not os.path.exists(os.path.join(ui_path, "index.html")):
