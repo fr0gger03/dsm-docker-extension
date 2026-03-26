@@ -26,7 +26,7 @@ ARG APP_VERSION=0.1.0
 
 LABEL org.opencontainers.image.title="VMwareDSMExtension" \
       org.opencontainers.image.description="Provision DSM databases natively from Docker Desktop" \
-      org.opencontainers.image.vendor="You/YourOrg" \
+      org.opencontainers.image.vendor="VMware DSM" \
       org.opencontainers.image.version="${APP_VERSION}" \
       com.docker.desktop.extension.api.version="0.3.4" \
       com.docker.extension.categories="database,development"

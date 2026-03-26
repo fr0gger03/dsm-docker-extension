@@ -1,8 +1,12 @@
 #!/bin/bash
 # Quick installation script for Docker Desktop Extension
 
-echo "🔨 Building VMware DSM Extension..."
-docker build --no-cache -t vmware-dsm-extension:latest .
+# Version is defined in the Dockerfile ARG and used as the image tag
+VERSION=${1:-0.1.0}
+IMAGE="vmware-dsm-extension:${VERSION}"
+
+echo "🔨 Building VMware DSM Extension v${VERSION}..."
+docker build --no-cache --build-arg APP_VERSION="${VERSION}" -t "${IMAGE}" .
 
 if [ $? -ne 0 ]; then
     echo "❌ Build failed"
@@ -12,14 +16,20 @@ fi
 echo "✅ Build successful"
 echo ""
 echo "📦 Installing extension into Docker Desktop..."
-docker extension install vmware-dsm-extension:latest
+
+# Check if already installed; update if so, install if not
+if docker extension ls 2>/dev/null | grep -q vmware-dsm-extension; then
+    echo "y" | docker extension update "${IMAGE}"
+else
+    docker extension install "${IMAGE}"
+fi
 
 if [ $? -ne 0 ]; then
     echo "❌ Installation failed"
     exit 1
 fi
 
-echo "✅ Extension installed successfully!"
+echo "✅ Extension v${VERSION} installed successfully!"
 echo ""
 echo "📝 Next steps:"
 echo "1. Open Docker Desktop"
