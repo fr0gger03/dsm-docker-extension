@@ -56,15 +56,18 @@ There are no tests configured for either the frontend or backend.
 - `POST /api/connect` — Validates and stores kubeconfig
 - `POST /api/disconnect` — Clears the stored kubeconfig session
 - `GET /api/namespaces` — Lists K8s namespaces via `CoreV1Api`
-- `GET /api/policies/{namespace}` — Lists DSM policies; falls back to `dataservicepolicybindings` and extracts policy names from `status.policies`
-- `POST /api/provision` — Creates a database CR (`PostgresCluster` or `MySQLCluster`) based on engine selection
+- `GET /api/namespace-config/{namespace}` — Returns full provisioning options from policy bindings: available engines+versions, infrastructure policies (vmClasses, storagePolicies), backup locations, storage limits
+- `POST /api/provision` — Creates a database CR with full DSM spec (version, admin creds, infrastructure policy, storage policy, VM class, disk size, topology, backup, maintenance window)
 - `GET /api/databases/{namespace}` — Lists provisioned databases across all engine types
+- `GET /api/databases/{namespace}/{name}/connection?engine=...` — Returns connection string, host, port, database name, username, and password secret reference
 - `DELETE /api/databases/{namespace}/{name}?engine=...` — Deletes a provisioned database
 - `GET /api/version` — Returns `APP_VERSION` from environment
 
 The backend also mounts the compiled UI as static files at `/` (fallback, for standalone mode).
 
-**Frontend** (`ui/src/App.tsx`) — A single-component React app. All UI logic lives in `App.tsx`. It communicates with the backend through the Docker Desktop extension service client (`@docker/extension-api-client`). The `callBackend` helper in `App.tsx` wraps this, using `client.extension.vm.service.get()` for GET endpoints and `.post()` for POST endpoints — the HTTP method must match the backend route.
+**Frontend** (`ui/src/App.tsx`) — A single-component React app. All UI logic lives in `App.tsx`. It communicates with the backend through the Docker Desktop extension service client (`@docker/extension-api-client`), using `client.extension.vm.service.get()` for GET endpoints and `.post()` for POST endpoints — the HTTP method must match the backend route.
+
+The provisioning form is a multi-section wizard populated dynamically from `/api/namespace-config`: Engine & Version, Basic Info (instance name, database name, admin credentials), Topology, Infrastructure (policy, storage policy, VM class, disk size), Backup, and Maintenance Window. The engine dropdown only shows engines allowed by the namespace's policy bindings.
 
 ### Docker Desktop Extension wiring
 
@@ -86,7 +89,7 @@ The backend also mounts the compiled UI as static files at `/` (fallback, for st
 The backend interacts with VMware DSM custom resources across two API groups:
 - `infrastructure.dataservices.vmware.com/v1alpha1`:
   - `dataservicepolicies` (read) — per-namespace policies, often empty
-  - `dataservicepolicybindings` (read, fallback) — bindings that reference policies; actual policy names are in `status.policies[*].name`
+- `dataservicepolicybindings` (read) — primary source of provisioning config; `status` contains engines+versions (`dataServiceVersions`), infrastructure policies with vmClasses/storagePolicies (`infrastructurePolicies`), backup locations, and topology limits (`aggregatePostgresPolicy`/`aggregateMysqlPolicy`). Connection info for provisioned databases is in the CR's `status.connection` (fields: `host`, `port`, `dbname`, `username`, `passwordRef`)
 - `databases.dataservices.vmware.com/v1alpha1`:
   - `postgresclusters` (create/list/delete) — PostgreSQL databases
   - `mysqlclusters` (create/list/delete) — MySQL databases
@@ -95,7 +98,7 @@ There is no generic `dbclusters` resource — databases are provisioned as engin
 
 ### Versioning
 
-`APP_VERSION` is defined as a Dockerfile `ARG` (default `0.1.0`). It propagates to:
+`APP_VERSION` is defined as a Dockerfile `ARG` (default `0.2.0`). It propagates to:
 - Docker image label `org.opencontainers.image.version`
 - Container `ENV APP_VERSION` → backend `GET /api/version`
 - Docker image tag (e.g., `vmware-dsm-extension:0.1.0`)

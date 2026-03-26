@@ -12,8 +12,10 @@ This extension provides a seamless interface for connecting to Kubernetes cluste
 - **Persistent Sessions**: Kubeconfig is stored in the backend container's memory — navigate away and come back without re-authenticating
 - **Namespace Discovery**: Automatically list accessible namespaces based on your RBAC permissions
 - **Policy Management**: Retrieve and display available DSM Data Service Policies (with automatic fallback to policy bindings)
-- **Database Provisioning**: Create PostgreSQL or MySQL database clusters with configurable policies
-- **Database Management**: View provisioned databases with status and delete them from the UI
+- **Database Provisioning**: Full provisioning wizard with engine/version selection, admin credentials, topology, infrastructure policy, storage policy, VM class, disk size, backup, and maintenance window
+- **Database Management**: View provisioned databases with status, delete, and retrieve connection strings
+- **Connection Strings**: Click "Connect" on any database to see host, port, database name, username, and a kubectl command to retrieve the password
+- **Engine Filtering**: Only engines allowed by the namespace's data service policy are shown
 - **Versioned Releases**: Version displayed in UI header and embedded in Docker image labels
 
 ## Architecture
@@ -23,9 +25,10 @@ This extension consists of two main components:
 ### Frontend (React + TypeScript + Vite)
 Located in `ui/`, the dashboard tab provides:
 - Kubeconfig upload/paste interface
-- Namespace selector
-- Policy browser
-- Database provisioning form
+- Namespace selector with dynamic engine filtering
+- Multi-section provisioning wizard (engine, version, credentials, topology, infrastructure, backup, maintenance)
+- Database table with status, connection info, and delete
+- Connection string modal with kubectl password retrieval command
 
 **Tech Stack**: React 19, TypeScript, Vite, Docker Extension API Client
 
@@ -35,9 +38,10 @@ Located in `backend/`, the API server provides:
 - `POST /api/connect` - Authenticate with kubeconfig and establish session
 - `POST /api/disconnect` - Clear the stored kubeconfig session
 - `GET /api/namespaces` - List namespaces accessible to the authenticated user
-- `GET /api/policies/{namespace}` - Retrieve DSM Data Service Policies in a namespace
-- `POST /api/provision` - Create a new database cluster resource (PostgreSQL or MySQL)
+- `GET /api/namespace-config/{namespace}` - Return provisioning options (engines, versions, infra policies, VM classes, storage policies, backup locations)
+- `POST /api/provision` - Create a database with full DSM spec (engine, version, credentials, topology, infrastructure, backup, maintenance)
 - `GET /api/databases/{namespace}` - List provisioned databases
+- `GET /api/databases/{namespace}/{name}/connection?engine=...` - Get connection string and details
 - `DELETE /api/databases/{namespace}/{name}?engine=...` - Delete a provisioned database
 - `GET /api/version` - Return the current application version
 
@@ -146,15 +150,20 @@ docker-compose -f docker-compose.standalone.yml up
 
 1. Once connected, select a namespace from the dropdown
 2. View existing databases in the **Databases** table
-3. Fill in the provisioning form:
-   - **Engine**: PostgreSQL or MySQL
-   - **Policy**: Select a DSM Data Service Policy
-   - **Name**: Database name (e.g., `my-postgres-db`)
-4. Click "Provision" to create the database
+3. Fill in the provisioning wizard:
+   - **Engine & Version**: Only engines allowed by the namespace policy are shown
+   - **Instance Name / Database Name**: Identify the cluster and default database
+   - **Admin Username / Password**: Database administrator credentials
+   - **Topology**: Single Server or HA Cluster
+   - **Infrastructure Policy / Storage Policy / VM Class / Disk Size**: Resource allocation
+   - **Backup Location / Retention**: Optional backup configuration
+   - **Maintenance Window**: Day and time for automated maintenance
+4. Click **Provision** to create the database
 
 ### Managing Databases
 
-- The **Databases** table shows all provisioned databases in the selected namespace with their engine, status, and creation time
+- The **Databases** table shows all provisioned databases with engine, status, and creation time
+- Click **Connect** to view the connection string, host, port, username, and a kubectl command to retrieve the password from the K8s secret
 - Click **Delete** to remove a database
 - Click **Refresh** to update the list
 - Click **Disconnect** to clear the session and connect with a different kubeconfig
@@ -167,11 +176,11 @@ The extension uses Unix domain sockets for secure communication between the fron
 
 ## Versioning
 
-The version is controlled by the `APP_VERSION` build arg in the Dockerfile (default: `0.1.0`). It flows to:
+The version is controlled by the `APP_VERSION` build arg in the Dockerfile (default: `0.2.0`). It flows to:
 - Docker image label (`org.opencontainers.image.version`)
-- Docker image tag (e.g., `vmware-dsm-extension:0.1.0`)
+- Docker image tag (e.g., `vmware-dsm-extension:0.2.0`)
 - Backend environment variable → `GET /api/version`
-- UI header display ("v0.1.0")
+- UI header display ("v0.2.0")
 
 To release a new version:
 ```bash
