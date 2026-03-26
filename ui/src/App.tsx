@@ -5,7 +5,7 @@ const client = createDockerDesktopClient();
 
 // --- Types ---
 interface Database { name: string; engine: string; status: string; created: string; databaseName?: string; adminUsername?: string; }
-interface ConnectionInfo { host: string; port: string; databaseName: string; adminUsername: string; connectionString: string; note: string; }
+interface ConnectionInfo { host: string; port: string; databaseName: string; adminUsername: string; connectionString: string; passwordSecretName?: string; note: string; }
 interface VmClass { name: string; requests?: { cpu: string; memory: string }; }
 interface InfraPolicy { name: string; status: string; vmClasses: VmClass[]; storagePolicies: string[]; zoneCount: number; }
 interface EngineConfig { engine: string; versions: string[]; allowedReplicas?: number[]; allowedMembers?: number[]; }
@@ -468,6 +468,12 @@ export default function App() {
                   <div><label style={lbl}>Database</label><div style={mono}>{connInfo.databaseName}</div></div>
                   <div><label style={lbl}>Username</label><div style={mono}>{connInfo.adminUsername}</div></div>
                 </div>
+                {connInfo.passwordSecretName && (
+                  <div style={{ marginTop: '8px' }}>
+                    <label style={lbl}>Password Secret (kubectl)</label>
+                    <div style={mono}>kubectl get secret {connInfo.passwordSecretName} -n {selectedNamespace} -o jsonpath='&#123;.data.password&#125;' | base64 -d</div>
+                  </div>
+                )}
               </>
             )}
           </div>

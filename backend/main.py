@@ -322,37 +322,35 @@ def list_databases(namespace: str):
 
 def _build_connection_string(engine: str, spec: dict, status: dict) -> dict:
     """Extract connection info from a database CR's spec and status."""
-    db_name = spec.get("databaseName", "")
-    admin_user = spec.get("adminUsername", "")
-    host = ""
-    port = ""
-
-    # DSM puts connection info in status — try common locations
     conn = status.get("connection", {})
-    if conn:
-        host = conn.get("host", conn.get("ip", ""))
-        port = str(conn.get("port", ""))
 
-    # Fallback: check status.host / status.ip / status.endpoints
+    # Prefer values from the connection object (actual runtime values),
+    # fall back to spec fields
+    host = str(conn.get("host", conn.get("ip", "")))
+    port = str(conn.get("port", ""))
+    db_name = str(conn.get("dbname", conn.get("databaseName", spec.get("databaseName", ""))))
+    admin_user = str(conn.get("username", spec.get("adminUsername", "")))
+
+    # Fallback: check status-level fields
     if not host:
-        host = status.get("host", status.get("ip", ""))
-    if not port:
+        host = str(status.get("host", status.get("ip", "")))
+    if not port or port == "0":
         port = str(status.get("port", ""))
-    endpoints = status.get("endpoints", [])
-    if endpoints and not host:
-        ep = endpoints[0] if isinstance(endpoints[0], dict) else {}
-        host = ep.get("host", ep.get("ip", ""))
-        port = str(ep.get("port", port))
 
-    # Default ports
-    if not port:
+    # Default ports if still empty
+    if not port or port == "0":
         port = "5432" if engine == "postgres" else "3306"
 
+    # Password secret reference (for display)
+    password_ref = ""
+    if isinstance(conn.get("passwordRef"), dict):
+        password_ref = conn["passwordRef"].get("name", "")
+
     # Build connection string
-    if engine == "postgres":
-        conn_str = f"postgresql://{admin_user}@{host}:{port}/{db_name}" if host else ""
-    elif engine == "mysql":
-        conn_str = f"mysql://{admin_user}@{host}:{port}/{db_name}" if host else ""
+    if engine == "postgres" and host:
+        conn_str = f"postgresql://{admin_user}@{host}:{port}/{db_name}"
+    elif engine == "mysql" and host:
+        conn_str = f"mysql://{admin_user}@{host}:{port}/{db_name}"
     else:
         conn_str = ""
 
@@ -362,6 +360,7 @@ def _build_connection_string(engine: str, spec: dict, status: dict) -> dict:
         "databaseName": db_name,
         "adminUsername": admin_user,
         "connectionString": conn_str,
+        "passwordSecretName": password_ref,
         "note": "" if host else "Connection details not yet available (database may still be provisioning)",
     }
 
@@ -381,6 +380,8 @@ def get_database_connection(namespace: str, name: str, engine: str = Query(...))
             plural=crd_info["plural"],
             name=name,
         )
+        logger.info(f"Connection CR status keys for {name}: {list(item.get('status', {}).keys())}")
+        logger.info(f"Connection CR status: {json.dumps(item.get('status', {}), default=str)}")
         return _build_connection_string(engine, item.get("spec", {}), item.get("status", {}))
     except Exception as e:
         raise HTTPException(status_code=500, detail=extract_k8s_error(e))
