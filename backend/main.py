@@ -316,12 +316,18 @@ def list_databases(namespace: str):
                 plural=crd["plural"]
             )
             for item in result.get("items", []):
-                status = item.get("status", {})
+                st = item.get("status", {})
                 spec = item.get("spec", {})
+                # Derive status from conditions[type=Ready]
+                db_status = "Unknown"
+                for cond in st.get("conditions", []):
+                    if cond.get("type") == "Ready":
+                        db_status = "Ready" if cond.get("status") == "True" else cond.get("reason", "Not Ready")
+                        break
                 databases.append({
                     "name": item["metadata"]["name"],
                     "engine": crd["engine"],
-                    "status": status.get("phase", status.get("state", "Unknown")),
+                    "status": db_status,
                     "created": item["metadata"].get("creationTimestamp", ""),
                     "databaseName": spec.get("databaseName", ""),
                     "adminUsername": spec.get("adminUsername", ""),
