@@ -22,9 +22,12 @@ RUN find /usr/local/lib/python3.13 -type d -name __pycache__ -exec rm -rf {} + 2
 # Stage 3: Final minimal image
 FROM python:3.13-slim
 
+ARG APP_VERSION=0.1.0
+
 LABEL org.opencontainers.image.title="VMwareDSMExtension" \
       org.opencontainers.image.description="Provision DSM databases natively from Docker Desktop" \
       org.opencontainers.image.vendor="You/YourOrg" \
+      org.opencontainers.image.version="${APP_VERSION}" \
       com.docker.desktop.extension.api.version="0.3.4" \
       com.docker.extension.categories="database,development"
 
@@ -40,6 +43,8 @@ COPY --from=python-deps /usr/local/bin /usr/local/bin
 # Copy app files
 COPY metadata.json icon.svg docker-compose.yaml /
 COPY --from=ui-builder /app/ui/dist /ui
+
+ENV APP_VERSION=${APP_VERSION}
 
 WORKDIR /backend
 COPY backend/main.py .

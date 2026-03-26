@@ -23,6 +23,7 @@ export default function App() {
   const [databases, setDatabases] = useState<Database[]>([]);
   const [status, setStatus] = useState('Checking session...');
   const [isLoading, setIsLoading] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
 
   // --- Error extraction helper ---
   // DD SDK errors may be nested objects, plain objects, Error instances, or strings.
@@ -99,6 +100,10 @@ export default function App() {
   // --- Check for existing session on mount ---
   useEffect(() => {
     const checkSession = async () => {
+      try {
+        const ver = await callGet('/api/version');
+        setAppVersion(ver.version || '');
+      } catch { /* ignore */ }
       try {
         const data = await callGet('/api/status');
         if (data.connected) {
@@ -211,7 +216,10 @@ export default function App() {
 
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '800px' }}>
-      <h1>VMware Data Services Manager</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <h1 style={{ margin: '0 0 4px 0' }}>VMware Data Services Manager</h1>
+        {appVersion && <span style={{ fontSize: '11px', color: '#999' }}>v{appVersion}</span>}
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Status: {status}</p>
         {isConnected && (

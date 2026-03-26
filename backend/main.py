@@ -12,6 +12,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
 app = FastAPI()
 
 # Enable CORS for Docker Desktop extension
@@ -61,6 +63,10 @@ def get_k8s_client():
     return client.CoreV1Api(), client.CustomObjectsApi()
 
 # --- Endpoints ---
+
+@app.get("/api/version")
+def get_version():
+    return {"version": APP_VERSION}
 
 @app.get("/api/status")
 def get_status():
