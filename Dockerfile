@@ -22,7 +22,7 @@ RUN find /usr/local/lib/python3.13 -type d -name __pycache__ -exec rm -rf {} + 2
 # Stage 3: Final minimal image
 FROM python:3.13-slim
 
-ARG APP_VERSION=0.2.0
+ARG APP_VERSION=0.4.0
 
 LABEL org.opencontainers.image.title="VMwareDSMExtension" \
       org.opencontainers.image.description="Provision DSM databases natively from Docker Desktop" \

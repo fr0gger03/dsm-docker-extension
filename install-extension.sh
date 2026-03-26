@@ -2,7 +2,7 @@
 # Quick installation script for Docker Desktop Extension
 
 # Version is defined in the Dockerfile ARG and used as the image tag
-VERSION=${1:-0.1.0}
+VERSION=${1:-0.4.0}
 IMAGE="vmware-dsm-extension:${VERSION}"
 
 echo "🔨 Building VMware DSM Extension v${VERSION}..."
