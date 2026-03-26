@@ -58,11 +58,15 @@ There are no tests configured for either the frontend or backend.
 
 ### Two-component system
 
-**Backend** (`backend/main.py`) — A single-file FastAPI app that holds an in-memory kubeconfig session and exposes four REST endpoints:
+**Backend** (`backend/main.py`) — A single-file FastAPI app that holds an in-memory kubeconfig session (persists across UI navigations since the backend container keeps running). Endpoints:
+- `GET /api/status` — Returns whether a session exists and pre-fetches namespaces (used by frontend to restore state on mount)
 - `POST /api/connect` — Validates and stores kubeconfig
+- `POST /api/disconnect` — Clears the stored kubeconfig session
 - `GET /api/namespaces` — Lists K8s namespaces via `CoreV1Api`
-- `GET /api/policies/{namespace}` — Lists DSM `dataservicepolicies` CRDs via `CustomObjectsApi`
-- `POST /api/provision` — Creates a `DBCluster` custom resource
+- `GET /api/policies/{namespace}` — Lists DSM policies; falls back to `dataservicepolicybindings` and extracts policy names from `status.policies`
+- `POST /api/provision` — Creates a database CR (`PostgresCluster` or `MySQLCluster`) based on engine selection
+- `GET /api/databases/{namespace}` — Lists provisioned databases across all engine types
+- `DELETE /api/databases/{namespace}/{name}?engine=...` — Deletes a provisioned database
 
 The backend also mounts the compiled UI as static files at `/` (fallback, for standalone mode).
 
@@ -85,6 +89,12 @@ The backend also mounts the compiled UI as static files at `/` (fallback, for st
 
 ### DSM Kubernetes CRDs
 
-The backend interacts with two VMware DSM custom resource types under group `dsm.vmware.com`, version `v1alpha1`:
-- `dataservicepolicies` (read) — retrieved per-namespace to populate the policy selector
-- `dbclusters` (create) — the provisioned database resource
+The backend interacts with VMware DSM custom resources across two API groups:
+- `infrastructure.dataservices.vmware.com/v1alpha1`:
+  - `dataservicepolicies` (read) — per-namespace policies, often empty
+  - `dataservicepolicybindings` (read, fallback) — bindings that reference policies; actual policy names are in `status.policies[*].name`
+- `databases.dataservices.vmware.com/v1alpha1`:
+  - `postgresclusters` (create/list/delete) — PostgreSQL databases
+  - `mysqlclusters` (create/list/delete) — MySQL databases
+
+There is no generic `dbclusters` resource — databases are provisioned as engine-specific CRs. The `ENGINE_CRD_MAP` in `main.py` maps UI engine names to CRD plural names and Kind.
