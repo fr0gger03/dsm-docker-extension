@@ -151,9 +151,19 @@ def get_namespace_config(namespace: str):
     for b in bindings.get("items", []):
         st = b.get("status", {})
 
-        # Engines + versions from dataServiceVersions
+        # Determine which engines this namespace's policies allow
+        allowed_service_types = set()
+        for p in st.get("policies", []):
+            svc_type = p.get("serviceType", "")
+            if svc_type:
+                allowed_service_types.add(svc_type)
+
+        # Engines + versions from dataServiceVersions, filtered by allowed policies
         for dsv in st.get("dataServiceVersions", []):
             svc = dsv.get("serviceType", "")
+            # Skip engines not allowed by this namespace's policies
+            if allowed_service_types and svc not in allowed_service_types:
+                continue
             versions = [v["version"] for v in dsv.get("versions", [])]
             engine_key = None
             if "postgres" in svc:

@@ -110,7 +110,7 @@ export default function App() {
       if (cfg.engines.length > 0) {
         const eng = cfg.engines[0];
         setEngine(eng.engine);
-        setAdminUsername(eng.engine === 'mysql' ? 'root' : 'pgadmin');
+        setAdminUsername(eng.engine === 'mysql' ? 'dbadmin' : 'pgadmin');
         if (eng.versions.length > 0) setVersion(eng.versions[0]);
       } else {
         setEngine('');
@@ -158,7 +158,7 @@ export default function App() {
   // When engine changes, update defaults
   useEffect(() => {
     if (!selectedEngineConfig) return;
-    setAdminUsername(engine === 'mysql' ? 'root' : 'pgadmin');
+    setAdminUsername(engine === 'mysql' ? 'dbadmin' : 'pgadmin');
     if (selectedEngineConfig.versions.length > 0 && !selectedEngineConfig.versions.includes(version)) {
       setVersion(selectedEngineConfig.versions[0]);
     }
