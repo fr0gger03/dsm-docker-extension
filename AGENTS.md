@@ -4,23 +4,21 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## What This Is
 
-A Docker Desktop extension for provisioning VMware Data Services Manager (DSM) databases. It connects to a Kubernetes cluster via kubeconfig, discovers namespaces and DSM policies, and creates `DBCluster` custom resources.
+A Docker Desktop extension for provisioning and managing VMware Data Services Manager (DSM) databases. It connects to a Kubernetes cluster via kubeconfig, discovers namespaces and DSM policies, and creates/lists/deletes database resources (PostgreSQL, MySQL).
 
 ## Build and Run
 
-### Build the extension image (multi-stage: compiles UI then assembles final image)
+### Build and install (recommended)
 ```
-docker build -t vmware-dsm-extension .
-```
-
-### Install into Docker Desktop
-```
-docker extension install vmware-dsm-extension:latest
+./install-extension.sh          # builds and installs v0.1.0
+./install-extension.sh 0.2.0    # builds and installs a specific version
 ```
 
-### Full build-and-install shortcut
+### Manual build with version
 ```
-./install-extension.sh
+docker build --build-arg APP_VERSION=0.1.0 -t vmware-dsm-extension:0.1.0 .
+docker extension install vmware-dsm-extension:0.1.0   # first time
+docker extension update vmware-dsm-extension:0.1.0    # subsequent
 ```
 
 ### Local development (two terminals)
@@ -30,11 +28,6 @@ cd ui && npm run dev
 
 # Backend (auto-reload)
 cd backend && uvicorn main:app --reload
-```
-
-### Production-style via compose
-```
-docker-compose up --build
 ```
 
 ### Standalone mode (outside Docker Desktop, exposes port 3000)
@@ -67,6 +60,7 @@ There are no tests configured for either the frontend or backend.
 - `POST /api/provision` — Creates a database CR (`PostgresCluster` or `MySQLCluster`) based on engine selection
 - `GET /api/databases/{namespace}` — Lists provisioned databases across all engine types
 - `DELETE /api/databases/{namespace}/{name}?engine=...` — Deletes a provisioned database
+- `GET /api/version` — Returns `APP_VERSION` from environment
 
 The backend also mounts the compiled UI as static files at `/` (fallback, for standalone mode).
 
@@ -98,3 +92,13 @@ The backend interacts with VMware DSM custom resources across two API groups:
   - `mysqlclusters` (create/list/delete) — MySQL databases
 
 There is no generic `dbclusters` resource — databases are provisioned as engine-specific CRs. The `ENGINE_CRD_MAP` in `main.py` maps UI engine names to CRD plural names and Kind.
+
+### Versioning
+
+`APP_VERSION` is defined as a Dockerfile `ARG` (default `0.1.0`). It propagates to:
+- Docker image label `org.opencontainers.image.version`
+- Container `ENV APP_VERSION` → backend `GET /api/version`
+- Docker image tag (e.g., `vmware-dsm-extension:0.1.0`)
+- UI header display via frontend fetch on mount
+
+Bump by passing `--build-arg APP_VERSION=x.y.z` or using `./install-extension.sh x.y.z`.
