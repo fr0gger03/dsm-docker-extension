@@ -24,11 +24,7 @@ export default function App() {
     try {
       let response;
       if (method === 'post') {
-        const requestBody = body ? JSON.stringify(body) : '';
-        response = await client.extension.vm?.service?.post(
-          path,
-          { body: requestBody }
-        );
+        response = await client.extension.vm?.service?.post(path, body);
       } else {
         response = await client.extension.vm?.service?.get(path);
       }

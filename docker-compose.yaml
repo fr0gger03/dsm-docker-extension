@@ -2,9 +2,5 @@ services:
   backend:
     image: ${DESKTOP_PLUGIN_IMAGE}
     working_dir: /backend
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3000"]
-    expose:
-      - "3000"
+    command: ["uvicorn", "main:app", "--uds", "/run/guest-services/backend.sock"]
     restart: always
-    environment:
-      - DOCKER_HOST=unix:///run/docker.sock

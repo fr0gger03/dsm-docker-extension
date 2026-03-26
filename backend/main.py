@@ -5,6 +5,10 @@ from pydantic import BaseModel
 from kubernetes import client, config
 import yaml
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -37,6 +41,9 @@ def get_k8s_client():
     
     # Load the configuration purely in memory
     config.load_kube_config_from_dict(session_state["kubeconfig"])
+    # DSM clusters may use CA certs with non-critical Basic Constraints,
+    # which Python's SSL rejects. Disable verification as a workaround.
+    client.Configuration._default.verify_ssl = False
     return client.CoreV1Api(), client.CustomObjectsApi()
 
 # --- Endpoints ---
@@ -70,43 +77,64 @@ def get_namespaces():
 def get_policies(namespace: str):
     _, custom_api = get_k8s_client()
     try:
-        # Querying the DSM Data Service Policies CRD
-        # (Note: Plural names might vary slightly based on exact DSM 9.x CRD definitions)
         policies = custom_api.list_namespaced_custom_object(
-            group="dsm.vmware.com",
+            group="infrastructure.dataservices.vmware.com",
             version="v1alpha1",
             namespace=namespace,
             plural="dataservicepolicies" 
         )
+        logger.info(f"Policies response for {namespace}: {len(policies.get('items', []))} items")
+        if not policies.get("items"):
+            # Try policy bindings instead — DSM may bind policies to namespaces this way
+            bindings = custom_api.list_namespaced_custom_object(
+                group="infrastructure.dataservices.vmware.com",
+                version="v1alpha1",
+                namespace=namespace,
+                plural="dataservicepolicybindings"
+            )
+            logger.info(f"PolicyBindings response for {namespace}: {len(bindings.get('items', []))} items")
+            # Extract policy names from binding status.policies
+            names = []
+            for b in bindings.get("items", []):
+                for p in b.get("status", {}).get("policies", []):
+                    names.append(p["name"])
+            return {"policies": names}
         return {"policies": [p["metadata"]["name"] for p in policies.get("items", [])]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Map UI engine names to DSM CRD plural names and Kind
+ENGINE_CRD_MAP = {
+    "postgres": {"plural": "postgresclusters", "kind": "PostgresCluster"},
+    "mysql": {"plural": "mysqlclusters", "kind": "MySQLCluster"},
+}
 
 @app.post("/api/provision")
 def provision_db(req: ProvisionRequest):
     _, custom_api = get_k8s_client()
     
-    # Construct the YAML manifest for DSM
+    crd_info = ENGINE_CRD_MAP.get(req.engine)
+    if not crd_info:
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {req.engine}")
+    
     manifest = {
-        "apiVersion": "dsm.vmware.com/v1alpha1",
-        "kind": "DBCluster",
+        "apiVersion": "databases.dataservices.vmware.com/v1alpha1",
+        "kind": crd_info["kind"],
         "metadata": {
             "name": req.db_name, 
             "namespace": req.namespace
         },
         "spec": {
-            "engine": req.engine,
             "dataServicePolicy": req.policy
         }
     }
     
     try:
-        # Apply the DBCluster resource to the user's namespace
         custom_api.create_namespaced_custom_object(
-            group="dsm.vmware.com",
+            group="databases.dataservices.vmware.com",
             version="v1alpha1",
             namespace=req.namespace,
-            plural="dbclusters",
+            plural=crd_info["plural"],
             body=manifest
         )
         return {"status": "Provisioning Started", "message": f"Created {req.db_name} in {req.namespace}"}

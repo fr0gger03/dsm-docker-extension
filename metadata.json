@@ -3,12 +3,18 @@
   "ui": {
     "dashboard-tab": {
       "title": "VMware DSM",
-"root": "/ui",
-      "src": "index.html"
+      "root": "/ui",
+      "src": "index.html",
+      "backend": {
+        "socket": "backend.sock"
+      }
     }
   },
   "vm": {
     "image": "${DESKTOP_PLUGIN_IMAGE}",
-    "composefile": "docker-compose.yaml"
+    "composefile": "docker-compose.yaml",
+    "exposes": {
+      "socket": "backend.sock"
+    }
   }
 }

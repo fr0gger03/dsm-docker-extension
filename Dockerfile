@@ -29,3 +29,5 @@ WORKDIR /backend
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/main.py .
+
+CMD ["uvicorn", "main:app", "--uds", "/run/guest-services/backend.sock"]

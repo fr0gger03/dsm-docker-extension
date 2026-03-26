@@ -70,14 +70,16 @@ The backend also mounts the compiled UI as static files at `/` (fallback, for st
 
 ### Docker Desktop Extension wiring
 
-- `metadata.json` — Declares the dashboard tab (rooted at `/ui`) and the VM service (uses `docker-compose.yaml` to run the backend).
-- `docker-compose.yaml` — Runs the backend image with `uvicorn` on port 3000. The `${DESKTOP_PLUGIN_IMAGE}` variable is injected by Docker Desktop at runtime.
-- `Dockerfile` — Multi-stage: Stage 1 builds the React app with Node 22, Stage 2 copies the dist into a Python 3.13-slim image and installs backend dependencies.
+- `metadata.json` — Declares the dashboard tab (rooted at `/ui`), the VM service, and the backend socket name via `vm.exposes.socket` and `ui.dashboard-tab.backend.socket`. Both must be set for Docker Desktop to wire up frontend-to-backend communication.
+- `docker-compose.yaml` — Runs the backend image with `uvicorn` listening on a Unix socket at `/run/guest-services/backend.sock`. The `${DESKTOP_PLUGIN_IMAGE}` variable is injected by Docker Desktop at runtime.
+- `Dockerfile` — Multi-stage: Stage 1 builds the React app with Node 22, Stage 2 copies the dist into a Python 3.13-slim image and installs backend dependencies. The `CMD` also starts uvicorn on the socket.
 
 ### Extension gotchas
 
 - **UI root path**: Docker Desktop prepends `ui/` when resolving the metadata `root` path. The Dockerfile must `COPY` built UI files to `/ui` (not `/ui/dist`) and `metadata.json` must set `root: "/ui"`. Using a nested path like `/ui/dist` causes a doubled `ui/ui/dist/` path that breaks loading.
 - **Vite base path**: `vite.config.ts` must set `base: './'` so asset paths in the built HTML are relative. Absolute paths (`/assets/...`) fail inside Docker Desktop's extension iframe context.
+- **Backend socket**: The backend MUST listen on a Unix socket (`/run/guest-services/backend.sock`), not TCP. Docker Desktop's `vm.service` API communicates through this socket. The socket filename must be declared in `metadata.json` in both `vm.exposes.socket` and `ui.dashboard-tab.backend.socket`. Docker Desktop automatically mounts `/run/guest-services/<extension-name>/` into the container at `/run/guest-services/`. Do NOT add an explicit `/run/guest-services` volume mount in docker-compose.yaml — it will override DD's automatic mount and break socket routing.
+- **POST body format**: The DD extension SDK's `.post(path, body)` takes the body object directly. Do NOT wrap it in `{ body: JSON.stringify(...) }` — FastAPI will receive a nested object instead of the expected fields.
 - **Updating the extension**: After rebuilding the Docker image, run `docker extension update vmware-dsm-extension:latest` (not `install`). A local `npm run build` alone does NOT update the installed extension — the Docker image must be rebuilt.
 - **Debug mode**: Run `docker extension dev debug vmware-dsm-extension` to open Chrome DevTools for the extension UI. Reset with `docker extension dev reset vmware-dsm-extension`.
 
