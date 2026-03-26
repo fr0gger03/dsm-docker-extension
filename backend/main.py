@@ -247,19 +247,20 @@ def provision_db(req: ProvisionRequest):
     elif req.engine == "mysql":
         spec["members"] = 3 if req.topology == "ha" else 1
 
-    # Password
-    if req.admin_password:
+    # Password — Postgres uses adminPassword in spec; MySQL does not support it
+    if req.admin_password and req.engine == "postgres":
         spec["adminPassword"] = req.admin_password
 
     # Backup (optional)
     if req.backup_location:
         spec["backupLocation"] = {"name": req.backup_location}
+        schedules = [{"name": "full-weekly", "type": "full", "schedule": "59 23 * * 6"}]
+        # Only Postgres supports incremental backups
+        if req.engine == "postgres":
+            schedules.append({"name": "incr-daily", "type": "incremental", "schedule": "59 23 1/1 * *"})
         spec["backupConfig"] = {
             "backupRetentionDays": req.backup_retention_days or 30,
-            "schedules": [
-                {"name": "full-weekly", "type": "full", "schedule": "59 23 * * 6"},
-                {"name": "incr-daily", "type": "incremental", "schedule": "59 23 1/1 * *"},
-            ],
+            "schedules": schedules,
         }
 
     manifest = {
